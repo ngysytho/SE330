@@ -4,10 +4,10 @@ import AvatarUploader from "../common/AvatarUploader.jsx";
 import Button from "../common/Button.jsx";
 import Input from "../common/Input.jsx";
 import Modal from "../common/Modal.jsx";
-import { roomService } from "../../services/roomService.js";
 import { useChat } from "../../context/ChatContext.jsx";
+import { roomService } from "../../services/roomService.js";
 
-export default function CreateGroupChatModal({ open, onClose }) {
+export default function EditRoomModal({ open, onClose, room }) {
   const { refreshRooms, setActiveRoom } = useChat();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -16,37 +16,43 @@ export default function CreateGroupChatModal({ open, onClose }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!open) return;
-    setName("");
-    setDescription("");
-    setAvatarUrl("");
+    if (!open || !room) return;
+    setName(room.name || "");
+    setDescription(room.description || "");
+    setAvatarUrl(room.avatarUrl || "");
     setError("");
-  }, [open]);
+  }, [open, room?.id]);
 
   async function submit(event) {
     event.preventDefault();
+    if (!room) return;
     setSaving(true);
     setError("");
     try {
-      const room = await roomService.createGroup({ name, description, avatarUrl, memberIds: [], isPublic: false });
+      const updated = await roomService.update(room.id, {
+        name,
+        description,
+        avatarUrl,
+        isPublic: room.isPublic,
+      });
+      setActiveRoom((current) => (current?.id === updated.id ? { ...current, ...updated } : current));
       await refreshRooms();
-      setActiveRoom(room);
       onClose();
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Không tạo được nhóm.");
+      setError(err?.response?.data?.message || err?.message || "Không cập nhật được nhóm.");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Modal title="Tạo nhóm chat" open={open} onClose={onClose}>
+    <Modal title="Thông tin nhóm" open={open} onClose={onClose}>
       <form className="room-form" onSubmit={submit}>
         <AvatarUploader value={avatarUrl} name={name} description="Avatar nhóm" onChange={setAvatarUrl} disabled={saving} />
-        <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Group name" required />
-        <Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" />
+        <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Tên nhóm" required />
+        <Input multiline rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Mô tả nhóm" />
         {error && <Alert type="error" showIcon message={error} />}
-        <Button className="w-full" type="submit" loading={saving}>Tạo nhóm</Button>
+        <Button className="w-full" type="submit" loading={saving}>Lưu thông tin</Button>
       </form>
     </Modal>
   );

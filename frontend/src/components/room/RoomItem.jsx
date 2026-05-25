@@ -10,6 +10,8 @@ export default function RoomItem({ room }) {
     ? new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" }).format(new Date(room.lastMessageAt))
     : "";
   const preview = room.lastMessageContent || (room.type === "GROUP" ? "Nhóm chat" : room.type === "FORUM" ? "Phòng chat chung" : room.description || "Đang hoạt động");
+  const unreadCount = Number(room.unreadCount) || 0;
+  const unreadLabel = unreadCount > 99 ? "99+" : unreadCount;
 
   return (
     <button
@@ -24,7 +26,10 @@ export default function RoomItem({ room }) {
           <Typography.Text strong ellipsis>
             {name}
           </Typography.Text>
-          {timeLabel && <span>{timeLabel}</span>}
+          <div className="room-meta">
+            {timeLabel && <span className="room-time">{timeLabel}</span>}
+            {unreadCount > 0 && <span className="room-unread-badge">{unreadLabel}</span>}
+          </div>
         </div>
         <Typography.Text type="secondary" ellipsis>
           {preview}

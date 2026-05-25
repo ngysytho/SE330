@@ -69,8 +69,9 @@ function messagePreview(message) {
   return "";
 }
 
-function applyMessagePreviewToRooms(rooms, message) {
+function applyMessagePreviewToRooms(rooms, message, options = {}) {
   if (!message?.roomId) return rooms;
+  const { clearUnread = false, incrementUnread = false, lastReadAt, lastReadMessageId } = options;
   return orderRooms(
     rooms.map((room) =>
       room.id === message.roomId
@@ -80,6 +81,9 @@ function applyMessagePreviewToRooms(rooms, message) {
             lastMessageContent: messagePreview(message),
             lastMessageAt: message.createdAt,
             updatedAt: message.updatedAt || message.createdAt || room.updatedAt,
+            unreadCount: clearUnread ? 0 : incrementUnread ? (Number(room.unreadCount) || 0) + 1 : room.unreadCount,
+            lastReadAt: lastReadAt ?? room.lastReadAt,
+            lastReadMessageId: lastReadMessageId ?? room.lastReadMessageId,
           }
         : room,
     ),
@@ -91,6 +95,9 @@ export function ChatProvider({ children }) {
   const privateRoomDisplayCacheRef = useRef(new Map());
   const activeRoomRef = useRef(null);
   const roomsRef = useRef([]);
+  const messagesRef = useRef([]);
+  const lastMarkedReadRef = useRef(new Map());
+  const handledCreatedMessagesRef = useRef(new Set());
   const [rooms, setRooms] = useState([]);
   const [activeRoom, setActiveRoom] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -115,6 +122,10 @@ export function ChatProvider({ children }) {
   }, [rooms]);
 
   useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
     if (!user || !accessToken) {
       disconnectWebSocket();
       setSocketConnected(false);
@@ -122,8 +133,13 @@ export function ChatProvider({ children }) {
       setActiveRoom(null);
       setMessages([]);
       setMembers([]);
+      messagesRef.current = [];
+      lastMarkedReadRef.current.clear();
+      handledCreatedMessagesRef.current.clear();
       return;
     }
+    lastMarkedReadRef.current.clear();
+    handledCreatedMessagesRef.current.clear();
     connectWebSocket(accessToken, () => setSocketConnected(true), () => setSocketConnected(false));
     refreshRooms();
   }, [user?.id, accessToken]);
@@ -149,8 +165,10 @@ export function ChatProvider({ children }) {
           memberService.list(room.id),
         ]);
         if (cancelled) return;
-        setMessages(orderMessages(roomMessages));
+        const orderedMessages = orderMessages(roomMessages);
+        setMessages(orderedMessages);
         setMembers(uniqueMembers(roomMembers));
+        markRoomRead(room, orderedMessages);
       } catch (err) {
         if (cancelled) return;
         setMessages([]);
@@ -285,6 +303,42 @@ export function ChatProvider({ children }) {
     );
   }
 
+  function markRoomLocallyRead(roomId, messageId, readAt = Date.now()) {
+    setRooms((current) =>
+      current.map((room) =>
+        room.id === roomId
+          ? { ...room, unreadCount: 0, lastReadMessageId: messageId || room.lastReadMessageId, lastReadAt: readAt }
+          : room,
+      ),
+    );
+    setActiveRoom((current) =>
+      current?.id === roomId
+        ? { ...current, unreadCount: 0, lastReadMessageId: messageId || current.lastReadMessageId, lastReadAt: readAt }
+        : current,
+    );
+  }
+
+  async function markRoomRead(room, roomMessages = messagesRef.current) {
+    if (!room?.id || activeRoomRef.current?.id !== room.id) return;
+    const readableMessages = orderMessages(roomMessages.filter((message) => message?.id && !message.deletedAt));
+    const latest = readableMessages.at(-1);
+    if (!latest?.id) {
+      markRoomLocallyRead(room.id, null);
+      return;
+    }
+    if (lastMarkedReadRef.current.get(room.id) === latest.id) {
+      markRoomLocallyRead(room.id, latest.id);
+      return;
+    }
+    lastMarkedReadRef.current.set(room.id, latest.id);
+    markRoomLocallyRead(room.id, latest.id);
+    try {
+      await messageService.read(room.id, latest.id);
+    } catch {
+      lastMarkedReadRef.current.delete(room.id);
+    }
+  }
+
   function applyRoomEvent(event, shouldRefreshRooms = true) {
     if (!event?.type) return;
     const eventRoomId = event.roomId || event.message?.roomId;
@@ -302,13 +356,31 @@ export function ChatProvider({ children }) {
     }
 
     if (event.type === "MESSAGE_CREATED") {
+      const activeForEvent = eventRoomId === currentActiveRoom?.id;
+      const isOwnMessage = event.message?.senderId === user?.id;
+      const messageId = event.message?.id;
+      const alreadyHandled = messageId ? handledCreatedMessagesRef.current.has(messageId) : false;
+      if (messageId) {
+        handledCreatedMessagesRef.current.add(messageId);
+        if (handledCreatedMessagesRef.current.size > 500) {
+          handledCreatedMessagesRef.current.delete(handledCreatedMessagesRef.current.values().next().value);
+        }
+      }
       if (eventRoomId === currentActiveRoom?.id) {
         setMessages((current) => upsertMessage(current, event.message));
+        markRoomRead(currentActiveRoom, upsertMessage(messagesRef.current, event.message));
       }
-      if (!roomsRef.current.some((room) => room.id === eventRoomId) && shouldRefreshRooms) {
+      if (!alreadyHandled && !roomsRef.current.some((room) => room.id === eventRoomId) && shouldRefreshRooms) {
         refreshRooms();
       }
-      setRooms((current) => applyMessagePreviewToRooms(current, event.message));
+      setRooms((current) =>
+        applyMessagePreviewToRooms(current, event.message, {
+          clearUnread: activeForEvent || isOwnMessage,
+          incrementUnread: !alreadyHandled && !activeForEvent && !isOwnMessage,
+          lastReadMessageId: activeForEvent || isOwnMessage ? event.message?.id : undefined,
+          lastReadAt: activeForEvent || isOwnMessage ? Date.now() : undefined,
+        }),
+      );
       setActiveRoom((current) =>
         current?.id === eventRoomId
           ? {
@@ -317,6 +389,9 @@ export function ChatProvider({ children }) {
               lastMessageContent: messagePreview(event.message),
               lastMessageAt: event.message?.createdAt,
               updatedAt: event.message?.updatedAt || event.message?.createdAt || current.updatedAt,
+              unreadCount: 0,
+              lastReadMessageId: event.message?.id || current.lastReadMessageId,
+              lastReadAt: Date.now(),
             }
           : current,
       );
@@ -372,8 +447,9 @@ export function ChatProvider({ children }) {
       messageType,
     };
     const message = await messageService.send(activeRoom.id, payload);
+    const nextMessages = upsertMessage(messagesRef.current, message);
     setMessages((current) => upsertMessage(current, message));
-    setRooms((current) => applyMessagePreviewToRooms(current, message));
+    setRooms((current) => applyMessagePreviewToRooms(current, message, { clearUnread: true, lastReadMessageId: message.id, lastReadAt: Date.now() }));
     setActiveRoom((current) =>
       current?.id === activeRoom.id
         ? {
@@ -382,9 +458,13 @@ export function ChatProvider({ children }) {
             lastMessageContent: messagePreview(message),
             lastMessageAt: message.createdAt,
             updatedAt: message.updatedAt || message.createdAt || current.updatedAt,
+            unreadCount: 0,
+            lastReadMessageId: message.id,
+            lastReadAt: Date.now(),
           }
         : current,
     );
+    markRoomRead(activeRoom, nextMessages);
     return message;
   }
 

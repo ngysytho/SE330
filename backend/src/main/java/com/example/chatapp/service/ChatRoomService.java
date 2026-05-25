@@ -2,12 +2,15 @@ package com.example.chatapp.service;
 
 import com.example.chatapp.dto.RoomDtos.CreatePrivateRoomRequest;
 import com.example.chatapp.dto.RoomDtos.CreateRoomRequest;
+import com.example.chatapp.dto.RoomDtos.RoomResponse;
 import com.example.chatapp.dto.RoomDtos.UpdateRoomRequest;
 import com.example.chatapp.enums.ChatRoomMemberRole;
 import com.example.chatapp.enums.ChatRoomType;
 import com.example.chatapp.exception.BadRequestException;
 import com.example.chatapp.exception.ForbiddenException;
 import com.example.chatapp.model.ChatRoom;
+import com.example.chatapp.model.ChatRoomMember;
+import com.example.chatapp.model.Message;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -79,8 +82,20 @@ public class ChatRoomService {
                 .toList();
     }
 
+    public List<RoomResponse> myRoomResponses(String userId) {
+        return myRooms(userId).stream()
+                .map(room -> toResponse(room, userId))
+                .toList();
+    }
+
     public List<ChatRoom> myRoomsByType(String userId, ChatRoomType type) {
         return myRooms(userId).stream().filter(room -> room.getType() == type).toList();
+    }
+
+    public List<RoomResponse> myRoomResponsesByType(String userId, ChatRoomType type) {
+        return myRoomsByType(userId, type).stream()
+                .map(room -> toResponse(room, userId))
+                .toList();
     }
 
     public ChatRoom get(String roomId, String actorId) {
@@ -92,6 +107,10 @@ public class ChatRoomService {
             memberService.requireActive(roomId, actorId);
         }
         return room;
+    }
+
+    public RoomResponse getResponse(String roomId, String actorId) {
+        return toResponse(get(roomId, actorId), actorId);
     }
 
     public ChatRoom update(String roomId, UpdateRoomRequest request, String actorId) {
@@ -228,5 +247,32 @@ public class ChatRoomService {
             firebase.update(FirebaseService.CHAT_ROOMS, room.getId(), Map.of("memberIds", userIds, "updatedAt", firebase.now()));
             room.setMemberIds(userIds);
         }
+    }
+
+    public RoomResponse toResponse(ChatRoom room, String userId) {
+        ChatRoomMember member = memberService.findMember(room.getId(), userId).orElse(null);
+        return RoomResponse.from(room, member, unreadCount(room, member, userId));
+    }
+
+    private int unreadCount(ChatRoom room, ChatRoomMember member, String userId) {
+        if (room.getLastMessageAt() == null || member == null) {
+            return 0;
+        }
+        Long baseline = member.getLastReadAt() != null ? member.getLastReadAt() : member.getJoinedAt();
+        if (baseline != null && room.getLastMessageAt() <= baseline) {
+            return 0;
+        }
+        return (int) firebase.run(firebase.collection(FirebaseService.MESSAGES)
+                        .whereEqualTo("roomId", room.getId())
+                        .get())
+                .stream()
+                .map(snapshot -> snapshot.toObject(Message.class))
+                .filter(message -> message.getDeletedAt() == null)
+                .filter(message -> !userId.equals(message.getSenderId()))
+                .filter(message -> {
+                    Long createdAt = message.getCreatedAt();
+                    return createdAt != null && (baseline == null || createdAt > baseline);
+                })
+                .count();
     }
 }

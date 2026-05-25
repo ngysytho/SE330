@@ -1,5 +1,10 @@
 HELP.md
 target/
+uploads/
+.env.local
+firebase-service-account.json
+*service-account*.json
+*.firebase-adminsdk*.json
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

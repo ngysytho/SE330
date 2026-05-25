@@ -2,6 +2,7 @@ package com.example.chatapp.controller;
 
 import com.example.chatapp.dto.RoomDtos.CreatePrivateRoomRequest;
 import com.example.chatapp.dto.RoomDtos.CreateRoomRequest;
+import com.example.chatapp.dto.RoomDtos.RoomResponse;
 import com.example.chatapp.dto.RoomDtos.UpdateRoomRequest;
 import com.example.chatapp.enums.ChatRoomType;
 import com.example.chatapp.model.ChatRoom;
@@ -32,61 +33,66 @@ public class ChatRoomController {
     }
 
     @PostMapping("/private")
-    public ChatRoom createPrivate(@RequestBody CreatePrivateRoomRequest request) {
-        ChatRoom room = chatRoomService.createPrivate(request, SecurityUtils.currentUserId());
+    public RoomResponse createPrivate(@RequestBody CreatePrivateRoomRequest request) {
+        String actorId = SecurityUtils.currentUserId();
+        ChatRoom room = chatRoomService.createPrivate(request, actorId);
         broadcastRoomUpsert(room);
-        return room;
+        return chatRoomService.toResponse(room, actorId);
     }
 
     @PostMapping("/group")
-    public ChatRoom createGroup(@RequestBody CreateRoomRequest request) {
-        ChatRoom room = chatRoomService.createGroup(request, SecurityUtils.currentUserId());
+    public RoomResponse createGroup(@RequestBody CreateRoomRequest request) {
+        String actorId = SecurityUtils.currentUserId();
+        ChatRoom room = chatRoomService.createGroup(request, actorId);
         broadcastRoomUpsert(room);
-        return room;
+        return chatRoomService.toResponse(room, actorId);
     }
 
     @PostMapping("/forum")
-    public ChatRoom createForum(@RequestBody CreateRoomRequest request) {
-        ChatRoom room = chatRoomService.createForum(request, SecurityUtils.currentUserId());
+    public RoomResponse createForum(@RequestBody CreateRoomRequest request) {
+        String actorId = SecurityUtils.currentUserId();
+        ChatRoom room = chatRoomService.createForum(request, actorId);
         broadcastRoomUpsert(room);
-        return room;
+        return chatRoomService.toResponse(room, actorId);
     }
 
     @GetMapping("/forum/default")
-    public ChatRoom defaultForum() {
-        return chatRoomService.defaultForum(SecurityUtils.currentUserId());
+    public RoomResponse defaultForum() {
+        String actorId = SecurityUtils.currentUserId();
+        return chatRoomService.toResponse(chatRoomService.defaultForum(actorId), actorId);
     }
 
     @GetMapping("/my")
-    public List<ChatRoom> myRooms() {
-        return chatRoomService.myRooms(SecurityUtils.currentUserId());
+    public List<RoomResponse> myRooms() {
+        return chatRoomService.myRoomResponses(SecurityUtils.currentUserId());
     }
 
     @GetMapping("/private")
-    public List<ChatRoom> privateRooms() {
-        return chatRoomService.myRoomsByType(SecurityUtils.currentUserId(), ChatRoomType.PRIVATE);
+    public List<RoomResponse> privateRooms() {
+        return chatRoomService.myRoomResponsesByType(SecurityUtils.currentUserId(), ChatRoomType.PRIVATE);
     }
 
     @GetMapping("/groups")
-    public List<ChatRoom> groups() {
-        return chatRoomService.myRoomsByType(SecurityUtils.currentUserId(), ChatRoomType.GROUP);
+    public List<RoomResponse> groups() {
+        return chatRoomService.myRoomResponsesByType(SecurityUtils.currentUserId(), ChatRoomType.GROUP);
     }
 
     @GetMapping("/forums")
-    public List<ChatRoom> forums() {
-        return chatRoomService.myRoomsByType(SecurityUtils.currentUserId(), ChatRoomType.FORUM);
+    public List<RoomResponse> forums() {
+        return chatRoomService.myRoomResponsesByType(SecurityUtils.currentUserId(), ChatRoomType.FORUM);
     }
 
     @GetMapping("/{roomId}")
-    public ChatRoom get(@PathVariable String roomId) {
-        return chatRoomService.get(roomId, SecurityUtils.currentUserId());
+    public RoomResponse get(@PathVariable String roomId) {
+        return chatRoomService.getResponse(roomId, SecurityUtils.currentUserId());
     }
 
     @PatchMapping("/{roomId}")
-    public ChatRoom update(@PathVariable String roomId, @RequestBody UpdateRoomRequest request) {
-        ChatRoom room = chatRoomService.update(roomId, request, SecurityUtils.currentUserId());
+    public RoomResponse update(@PathVariable String roomId, @RequestBody UpdateRoomRequest request) {
+        String actorId = SecurityUtils.currentUserId();
+        ChatRoom room = chatRoomService.update(roomId, request, actorId);
         broadcastRoomUpsert(room);
-        return room;
+        return chatRoomService.toResponse(room, actorId);
     }
 
     @DeleteMapping("/{roomId}")

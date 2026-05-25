@@ -14,6 +14,15 @@ function storeAuth(data) {
   return data;
 }
 
+export function storeUser(user) {
+  if (user) {
+    sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+  } else {
+    sessionStorage.removeItem(USER_KEY);
+  }
+  return user;
+}
+
 export async function register(payload) {
   const { data } = await api.post("/api/auth/register", payload);
   return storeAuth(data);

@@ -6,10 +6,15 @@ import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.cloud.FirestoreClient;
 import com.google.firebase.cloud.StorageClient;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,6 +28,12 @@ public class FirebaseConfig {
     @Value("${firebase.service-account-path:firebase-service-account.json}")
     private String serviceAccountPath;
 
+    @Value("${firebase.service-account-json:}")
+    private String serviceAccountJson;
+
+    @Value("${firebase.service-account-base64:}")
+    private String serviceAccountBase64;
+
     @Value("${firebase.storage-bucket:}")
     private String storageBucket;
 
@@ -32,17 +43,15 @@ public class FirebaseConfig {
             return FirebaseApp.getInstance();
         }
 
-        try (InputStream serviceAccount = openServiceAccount()) {
-            String bucket = storageBucket == null || storageBucket.isBlank()
-                    ? projectId + ".appspot.com"
-                    : storageBucket;
-            FirebaseOptions options = FirebaseOptions.builder()
-                    .setCredentials(GoogleCredentials.fromStream(serviceAccount))
-                    .setProjectId(projectId)
-                    .setStorageBucket(bucket)
-                    .build();
-            return FirebaseApp.initializeApp(options);
-        }
+        String bucket = storageBucket == null || storageBucket.isBlank()
+                ? projectId + ".appspot.com"
+                : storageBucket;
+        FirebaseOptions options = FirebaseOptions.builder()
+                .setCredentials(firebaseCredentials())
+                .setProjectId(projectId)
+                .setStorageBucket(bucket)
+                .build();
+        return FirebaseApp.initializeApp(options);
     }
 
     @Bean
@@ -55,15 +64,50 @@ public class FirebaseConfig {
         return StorageClient.getInstance(firebaseApp);
     }
 
-    private InputStream openServiceAccount() throws IOException {
-        ClassPathResource resource = new ClassPathResource(serviceAccountPath);
-        if (resource.exists()) {
-            return resource.getInputStream();
+    private GoogleCredentials firebaseCredentials() throws IOException {
+        List<String> attempted = new ArrayList<>();
+
+        InputStream serviceAccount = openConfiguredServiceAccount(attempted);
+        if (serviceAccount != null) {
+            try (serviceAccount) {
+                return GoogleCredentials.fromStream(serviceAccount);
+            }
         }
-        Path path = Path.of(serviceAccountPath);
-        if (Files.exists(path)) {
-            return Files.newInputStream(path);
+
+        try {
+            return GoogleCredentials.getApplicationDefault();
+        } catch (IOException error) {
+            attempted.add("Application Default Credentials");
+            throw new IOException("Firebase credentials not found. Set FIREBASE_SERVICE_ACCOUNT_PATH, "
+                    + "FIREBASE_SERVICE_ACCOUNT_JSON, FIREBASE_SERVICE_ACCOUNT_BASE64, or GOOGLE_APPLICATION_CREDENTIALS. "
+                    + "Attempted: " + String.join(", ", attempted), error);
         }
-        throw new IOException("Firebase service account file not found: " + serviceAccountPath);
+    }
+
+    private InputStream openConfiguredServiceAccount(List<String> attempted) throws IOException {
+        if (serviceAccountPath != null && !serviceAccountPath.isBlank()) {
+            attempted.add(serviceAccountPath);
+            ClassPathResource resource = new ClassPathResource(serviceAccountPath);
+            if (resource.exists()) {
+                return resource.getInputStream();
+            }
+            Path path = Path.of(serviceAccountPath);
+            if (Files.exists(path)) {
+                return Files.newInputStream(path);
+            }
+        }
+
+        if (serviceAccountJson != null && !serviceAccountJson.isBlank()) {
+            attempted.add("FIREBASE_SERVICE_ACCOUNT_JSON");
+            return new ByteArrayInputStream(serviceAccountJson.getBytes(StandardCharsets.UTF_8));
+        }
+
+        if (serviceAccountBase64 != null && !serviceAccountBase64.isBlank()) {
+            attempted.add("FIREBASE_SERVICE_ACCOUNT_BASE64");
+            byte[] decoded = Base64.getDecoder().decode(serviceAccountBase64);
+            return new ByteArrayInputStream(decoded);
+        }
+
+        return null;
     }
 }

@@ -1,12 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { clearStoredAuth, getMe, getStoredAuth, login as loginService, logout as logoutService, register as registerService } from "../services/authService.js";
+import { clearStoredAuth, getMe, getStoredAuth, login as loginService, logout as logoutService, register as registerService, storeUser } from "../services/authService.js";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const stored = getStoredAuth();
   const [accessToken, setAccessToken] = useState(stored.accessToken);
-  const [user, setUser] = useState(stored.user);
+  const [user, setUserState] = useState(stored.user);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -17,11 +17,11 @@ export function AuthProvider({ children }) {
         return;
       }
       try {
-        setUser(await getMe());
+        setUserState(await getMe());
       } catch {
         clearStoredAuth();
         setAccessToken(null);
-        setUser(null);
+        setUserState(null);
       } finally {
         setLoading(false);
       }
@@ -35,7 +35,7 @@ export function AuthProvider({ children }) {
     try {
       const data = await loginService(payload);
       setAccessToken(data.accessToken);
-      setUser(data.user);
+      setUserState(data.user);
       return data;
     } catch (err) {
       const message = err?.response?.data?.message || err?.message || "Login failed";
@@ -52,7 +52,7 @@ export function AuthProvider({ children }) {
     try {
       const data = await registerService(payload);
       setAccessToken(data.accessToken);
-      setUser(data.user);
+      setUserState(data.user);
       return data;
     } catch (err) {
       const message = err?.response?.data?.message || err?.message || "Registration failed";
@@ -66,7 +66,11 @@ export function AuthProvider({ children }) {
   async function logout() {
     await logoutService();
     setAccessToken(null);
-    setUser(null);
+    setUserState(null);
+  }
+
+  function setUser(nextUser) {
+    setUserState(storeUser(nextUser));
   }
 
   const value = useMemo(

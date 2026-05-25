@@ -1,16 +1,18 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChatCircleDots, LockSimple, MagnifyingGlass, UserCircle, UserPlus, UsersThree } from "@phosphor-icons/react";
+import { ChatCircleDots, LockSimple, MagnifyingGlass, PencilSimple, UserCircle, UserPlus, UsersThree } from "@phosphor-icons/react";
 import { Avatar, Button, Empty, Layout, Tooltip } from "antd";
 import AddMemberModal from "./AddMemberModal.jsx";
 import MemberItem from "./MemberItem.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useChat } from "../../context/ChatContext.jsx";
+import EditRoomModal from "../room/EditRoomModal.jsx";
 
 export default function MemberList() {
   const { members, activeRoom } = useChat();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const visibleMembers = useMemo(() => {
     const byUserId = new Map();
     members.forEach((member) => {
@@ -34,6 +36,8 @@ export default function MemberList() {
     (activeRoom?.name && activeRoom.name !== "Private chat" ? activeRoom.name : activeRoom?.type === "PRIVATE" ? "Tin nhắn riêng" : "Chat info");
   const avatar = activeRoom?.displayAvatar || otherMember?.userAvatar || activeRoom?.avatarUrl;
   const initials = displayName.slice(0, 2).toUpperCase();
+  const myMember = members.find((member) => member.userId === user?.id);
+  const canEditGroup = activeRoom?.type === "GROUP" && ["OWNER", "ADMIN"].includes(myMember?.role);
 
   return (
     <Layout.Sider width={300} className="member-panel">
@@ -59,6 +63,12 @@ export default function MemberList() {
                   <span><MagnifyingGlass size={24} weight="bold" /></span>
                   <strong>Search</strong>
                 </button>
+                {canEditGroup && (
+                  <button className="chat-info-action" type="button" onClick={() => setEditOpen(true)}>
+                    <span><PencilSimple size={24} weight="fill" /></span>
+                    <strong>Edit</strong>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -99,6 +109,7 @@ export default function MemberList() {
         )}
       </div>
       <AddMemberModal open={open} onClose={() => setOpen(false)} />
+      <EditRoomModal open={editOpen} onClose={() => setEditOpen(false)} room={activeRoom} />
     </Layout.Sider>
   );
 }

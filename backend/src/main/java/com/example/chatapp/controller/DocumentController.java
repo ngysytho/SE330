@@ -4,6 +4,11 @@ import com.example.chatapp.model.Document;
 import com.example.chatapp.security.SecurityUtils;
 import com.example.chatapp.service.DocumentService;
 import java.util.List;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,6 +40,15 @@ public class DocumentController {
     @GetMapping("/{id}")
     public Document get(@PathVariable String id) {
         return documentService.get(id, SecurityUtils.currentUserId());
+    }
+
+    @GetMapping("/files/{id}")
+    public ResponseEntity<Resource> file(@PathVariable String id) {
+        DocumentService.StoredFile file = documentService.downloadFile(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.contentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : file.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().filename(file.fileName()).build().toString())
+                .body(file.resource());
     }
 
     @DeleteMapping("/{id}")
