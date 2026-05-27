@@ -1,13 +1,16 @@
 package com.example.chatapp.controller;
 
 import com.example.chatapp.dto.AuthDtos.UserResponse;
+import com.example.chatapp.dto.UserDtos.FcmTokenRequest;
 import com.example.chatapp.dto.UserDtos.UpdateUserRequest;
 import com.example.chatapp.security.SecurityUtils;
 import com.example.chatapp.service.UserService;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,6 +33,16 @@ public class UserController {
     @PatchMapping("/me")
     public UserResponse updateMe(@RequestBody UpdateUserRequest request) {
         return UserResponse.from(userService.update(SecurityUtils.currentUserId(), request));
+    }
+
+    @PostMapping("/me/fcm-token")
+    public UserResponse registerFcmToken(@RequestBody FcmTokenRequest request) {
+        return UserResponse.from(userService.registerFcmToken(SecurityUtils.currentUserId(), request.token()));
+    }
+
+    @DeleteMapping("/me/fcm-token")
+    public void removeFcmToken(@RequestBody FcmTokenRequest request) {
+        userService.removeFcmToken(SecurityUtils.currentUserId(), request.token());
     }
 
     @GetMapping("/{id}")

@@ -7,7 +7,7 @@ import RoomList from "../room/RoomList.jsx";
 import { useChat } from "../../context/ChatContext.jsx";
 
 export default function Sidebar() {
-  const { rooms } = useChat();
+  const { rooms, loadingRooms } = useChat();
   const [modal, setModal] = useState(null);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState("all");
@@ -60,7 +60,7 @@ export default function Sidebar() {
         />
       </div>
       <div className="sidebar-scroll">
-        <RoomList rooms={filteredRooms} />
+        <RoomList rooms={filteredRooms} loading={loadingRooms && rooms.length === 0} />
       </div>
       <CreatePrivateChatModal open={modal === "private"} onClose={() => setModal(null)} />
       <CreateGroupChatModal open={modal === "group"} onClose={() => setModal(null)} />

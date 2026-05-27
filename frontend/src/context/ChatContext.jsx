@@ -1,23 +1,28 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { connectWebSocket, disconnectWebSocket, send, subscribe } from "../config/websocket.js";
 import { memberService } from "../services/memberService.js";
 import { messageService } from "../services/messageService.js";
+import { registerPushNotifications } from "../services/pushService.js";
 import { roomService } from "../services/roomService.js";
+import {
+  orderMessages,
+  orderRooms,
+  readCachedMessages,
+  readCachedRooms,
+  writeCachedMessages,
+  writeCachedRooms,
+} from "../services/chatCacheService.js";
+import {
+  connectWebSocket,
+  disconnectWebSocket,
+  sendTyping,
+  subscribePresence,
+  subscribeRoom,
+  subscribeRoomTyping,
+  subscribeUserRooms,
+} from "../services/chatWebSocketService.js";
 import { useAuth } from "./AuthContext.jsx";
 
 const ChatContext = createContext(null);
-
-function orderMessages(messages) {
-  return [...messages].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-}
-
-function orderRooms(rooms) {
-  return [...rooms].sort((a, b) => {
-    const aTime = a.lastMessageAt || a.updatedAt || a.createdAt || 0;
-    const bTime = b.lastMessageAt || b.updatedAt || b.createdAt || 0;
-    return bTime - aTime;
-  });
-}
 
 function uniqueMembers(memberList) {
   const byUserId = new Map();
@@ -69,6 +74,40 @@ function messagePreview(message) {
   return "";
 }
 
+function canShowNotification() {
+  return typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted";
+}
+
+function shouldNotifyForMessage(message, currentUserId) {
+  return canShowNotification()
+    && message?.senderId
+    && message.senderId !== currentUserId
+    && (document.visibilityState !== "visible" || !document.hasFocus());
+}
+
+function showBrowserMessageNotification(room, message) {
+  if (!message) return;
+  const roomName = room?.displayName || (room?.name && room.name !== "Private chat" ? room.name : "");
+  const senderName = message.senderName || "Tin nhắn mới";
+  const title = room?.type === "GROUP" && roomName ? roomName : senderName;
+  const bodyPrefix = room?.type === "GROUP" && senderName ? `${senderName}: ` : "";
+  const notification = new Notification(title || "Tin nhắn mới", {
+    body: `${bodyPrefix}${messagePreview(message) || "Tin nhắn mới"}`,
+    icon: message.senderAvatar || room?.displayAvatar || room?.avatarUrl || "/logo192.png",
+    badge: "/logo192.png",
+    tag: message.roomId,
+    data: {
+      url: `/chat?roomId=${message.roomId}`,
+      roomId: message.roomId,
+    },
+  });
+  notification.onclick = () => {
+    window.focus();
+    window.location.assign(notification.data?.url || "/chat");
+    notification.close();
+  };
+}
+
 function applyMessagePreviewToRooms(rooms, message, options = {}) {
   if (!message?.roomId) return rooms;
   const { clearUnread = false, incrementUnread = false, lastReadAt, lastReadMessageId } = options;
@@ -98,6 +137,7 @@ export function ChatProvider({ children }) {
   const messagesRef = useRef([]);
   const lastMarkedReadRef = useRef(new Map());
   const handledCreatedMessagesRef = useRef(new Set());
+  const pushRegistrationUserRef = useRef(null);
   const [rooms, setRooms] = useState([]);
   const [activeRoom, setActiveRoom] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -126,6 +166,11 @@ export function ChatProvider({ children }) {
   }, [messages]);
 
   useEffect(() => {
+    if (!user?.id || rooms.length === 0) return;
+    writeCachedRooms(user.id, rooms);
+  }, [rooms, user?.id]);
+
+  useEffect(() => {
     if (!user || !accessToken) {
       disconnectWebSocket();
       setSocketConnected(false);
@@ -136,12 +181,25 @@ export function ChatProvider({ children }) {
       messagesRef.current = [];
       lastMarkedReadRef.current.clear();
       handledCreatedMessagesRef.current.clear();
+      pushRegistrationUserRef.current = null;
       return;
     }
     lastMarkedReadRef.current.clear();
     handledCreatedMessagesRef.current.clear();
+    const cachedRooms = readCachedRooms(user.id);
+    if (cachedRooms.length > 0) {
+      setRooms(cachedRooms);
+      setActiveRoom((current) => current || cachedRooms[0]);
+    }
     connectWebSocket(accessToken, () => setSocketConnected(true), () => setSocketConnected(false));
     refreshRooms();
+    if (pushRegistrationUserRef.current !== user.id) {
+      pushRegistrationUserRef.current = user.id;
+      registerPushNotifications().catch((error) => {
+        console.warn("[push] Không đăng ký được notification push. Tab đang mở vẫn dùng WebSocket fallback.", error);
+        pushRegistrationUserRef.current = null;
+      });
+    }
   }, [user?.id, accessToken]);
 
   useEffect(() => {
@@ -156,6 +214,14 @@ export function ChatProvider({ children }) {
     }
 
     async function loadRoomData(room) {
+      const cachedMessages = readCachedMessages(user?.id, room.id);
+      if (cachedMessages.length > 0) {
+        setMessages(cachedMessages);
+        messagesRef.current = cachedMessages;
+      } else {
+        setMessages([]);
+        messagesRef.current = [];
+      }
       setLoadingMessages(true);
       setRoomError("");
       setTypingUsers({});
@@ -167,11 +233,12 @@ export function ChatProvider({ children }) {
         if (cancelled) return;
         const orderedMessages = orderMessages(roomMessages);
         setMessages(orderedMessages);
+        messagesRef.current = orderedMessages;
+        writeCachedMessages(user?.id, room.id, orderedMessages);
         setMembers(uniqueMembers(roomMembers));
         markRoomRead(room, orderedMessages);
       } catch (err) {
         if (cancelled) return;
-        setMessages([]);
         setMembers([]);
         setRoomError(err?.response?.data?.message || err?.message || "Could not load this room");
       } finally {
@@ -195,7 +262,7 @@ export function ChatProvider({ children }) {
 
     const subscriptions = roomTopicKey
       .split("|")
-      .map((roomId) => subscribe(`/topic/rooms/${roomId}`, (event) => applyRoomEvent(event, false)))
+      .map((roomId) => subscribeRoom(roomId, (event) => applyRoomEvent(event, false)))
       .filter(Boolean);
 
     return () => subscriptions.forEach((subscription) => subscription.unsubscribe());
@@ -206,7 +273,7 @@ export function ChatProvider({ children }) {
       return undefined;
     }
 
-    const typingSubscription = subscribe(`/topic/rooms/${activeRoom.id}/typing`, (event) => {
+    const typingSubscription = subscribeRoomTyping(activeRoom.id, (event) => {
       if (event.userId === user?.id) return;
       setTypingUsers((current) => ({ ...current, [event.userId]: event.typing }));
       if (event.typing) {
@@ -224,7 +291,7 @@ export function ChatProvider({ children }) {
       return undefined;
     }
 
-    const userRoomSubscription = subscribe("/user/queue/rooms", applyRoomEvent);
+    const userRoomSubscription = subscribeUserRooms(applyRoomEvent);
 
     return () => userRoomSubscription?.unsubscribe();
   }, [socketConnected, user?.id]);
@@ -234,7 +301,7 @@ export function ChatProvider({ children }) {
       return undefined;
     }
 
-    const presenceSubscription = subscribe("/topic/presence", (event) => {
+    const presenceSubscription = subscribePresence((event) => {
       if (event.type !== "PRESENCE_CHANGED") return;
       setMembers((current) =>
         uniqueMembers(
@@ -367,11 +434,18 @@ export function ChatProvider({ children }) {
         }
       }
       if (eventRoomId === currentActiveRoom?.id) {
-        setMessages((current) => upsertMessage(current, event.message));
-        markRoomRead(currentActiveRoom, upsertMessage(messagesRef.current, event.message));
+        const nextMessages = upsertMessage(messagesRef.current, event.message);
+        setMessages(nextMessages);
+        messagesRef.current = nextMessages;
+        writeCachedMessages(user?.id, eventRoomId, nextMessages);
+        markRoomRead(currentActiveRoom, nextMessages);
       }
       if (!alreadyHandled && !roomsRef.current.some((room) => room.id === eventRoomId) && shouldRefreshRooms) {
         refreshRooms();
+      }
+      if (!alreadyHandled && !isOwnMessage && shouldNotifyForMessage(event.message, user?.id)) {
+        const roomForNotification = event.room || roomsRef.current.find((room) => room.id === eventRoomId);
+        showBrowserMessageNotification(roomForNotification, event.message);
       }
       setRooms((current) =>
         applyMessagePreviewToRooms(current, event.message, {
@@ -400,7 +474,10 @@ export function ChatProvider({ children }) {
 
     if (event.type === "MESSAGE_UPDATED" && event.message) {
       if (eventRoomId === currentActiveRoom?.id) {
-        setMessages((current) => current.map((message) => (message.id === event.message.id ? event.message : message)));
+        const nextMessages = messagesRef.current.map((message) => (message.id === event.message.id ? event.message : message));
+        setMessages(nextMessages);
+        messagesRef.current = nextMessages;
+        writeCachedMessages(user?.id, eventRoomId, nextMessages);
       }
       setRooms((current) =>
         orderRooms(
@@ -416,7 +493,10 @@ export function ChatProvider({ children }) {
 
     if (event.type === "MESSAGE_DELETED") {
       if (eventRoomId === currentActiveRoom?.id) {
-        setMessages((current) => current.filter((message) => message.id !== event.messageId));
+        const nextMessages = messagesRef.current.filter((message) => message.id !== event.messageId);
+        setMessages(nextMessages);
+        messagesRef.current = nextMessages;
+        writeCachedMessages(user?.id, eventRoomId, nextMessages);
       }
       setRooms((current) =>
         current.map((room) =>
@@ -448,7 +528,9 @@ export function ChatProvider({ children }) {
     };
     const message = await messageService.send(activeRoom.id, payload);
     const nextMessages = upsertMessage(messagesRef.current, message);
-    setMessages((current) => upsertMessage(current, message));
+    setMessages(nextMessages);
+    messagesRef.current = nextMessages;
+    writeCachedMessages(user?.id, activeRoom.id, nextMessages);
     setRooms((current) => applyMessagePreviewToRooms(current, message, { clearUnread: true, lastReadMessageId: message.id, lastReadAt: Date.now() }));
     setActiveRoom((current) =>
       current?.id === activeRoom.id
@@ -470,20 +552,26 @@ export function ChatProvider({ children }) {
 
   async function editMessage(messageId, content) {
     const message = await messageService.update(messageId, content);
-    setMessages((current) => current.map((item) => (item.id === message.id ? message : item)));
+    const nextMessages = messagesRef.current.map((item) => (item.id === message.id ? message : item));
+    setMessages(nextMessages);
+    messagesRef.current = nextMessages;
+    writeCachedMessages(user?.id, message.roomId, nextMessages);
     return message;
   }
 
   async function deleteMessage(messageId) {
     await messageService.remove(messageId);
-    setMessages((current) => current.filter((message) => message.id !== messageId));
+    const nextMessages = messagesRef.current.filter((message) => message.id !== messageId);
+    setMessages(nextMessages);
+    messagesRef.current = nextMessages;
+    writeCachedMessages(user?.id, activeRoom?.id, nextMessages);
     refreshRooms();
   }
 
   function setTyping(typing) {
     if (activeRoom) {
       try {
-        send("/app/chat.typing", { roomId: activeRoom.id, typing });
+        sendTyping(activeRoom.id, typing);
       } catch {
         // Typing is best-effort realtime state.
       }

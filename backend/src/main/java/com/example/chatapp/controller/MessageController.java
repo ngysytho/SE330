@@ -2,16 +2,16 @@ package com.example.chatapp.controller;
 
 import com.example.chatapp.dto.MessageDtos.CreateMessageRequest;
 import com.example.chatapp.dto.MessageDtos.UpdateMessageRequest;
-import com.example.chatapp.enums.ChatRoomMemberStatus;
 import com.example.chatapp.model.ChatRoom;
 import com.example.chatapp.model.Message;
 import com.example.chatapp.security.SecurityUtils;
 import com.example.chatapp.service.ChatRoomMemberService;
 import com.example.chatapp.service.ChatRoomService;
 import com.example.chatapp.service.MessageService;
+import com.example.chatapp.service.PushNotificationService;
+import com.example.chatapp.websocket.RoomEventPublisher;
 import java.util.List;
 import java.util.Map;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -27,13 +27,15 @@ public class MessageController {
     private final MessageService messageService;
     private final ChatRoomMemberService memberService;
     private final ChatRoomService roomService;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final PushNotificationService pushNotificationService;
+    private final RoomEventPublisher roomEventPublisher;
 
-    public MessageController(MessageService messageService, ChatRoomMemberService memberService, ChatRoomService roomService, SimpMessagingTemplate messagingTemplate) {
+    public MessageController(MessageService messageService, ChatRoomMemberService memberService, ChatRoomService roomService, PushNotificationService pushNotificationService, RoomEventPublisher roomEventPublisher) {
         this.messageService = messageService;
         this.memberService = memberService;
         this.roomService = roomService;
-        this.messagingTemplate = messagingTemplate;
+        this.pushNotificationService = pushNotificationService;
+        this.roomEventPublisher = roomEventPublisher;
     }
 
     @GetMapping("/api/rooms/{roomId}/messages")
@@ -46,7 +48,8 @@ public class MessageController {
         String actorId = SecurityUtils.currentUserId();
         Message message = messageService.send(roomId, request, actorId);
         ChatRoom room = roomService.get(roomId, actorId);
-        broadcastRoomEvent(roomId, actorId, Map.of("type", "MESSAGE_CREATED", "roomId", roomId, "message", message, "room", room));
+        roomEventPublisher.publishRoomEvent(roomId, actorId, Map.of("type", "MESSAGE_CREATED", "roomId", roomId, "message", message, "room", room));
+        pushNotificationService.notifyNewMessage(room, message, actorId);
         return message;
     }
 
@@ -54,7 +57,7 @@ public class MessageController {
     public Message update(@PathVariable String messageId, @RequestBody UpdateMessageRequest request) {
         String actorId = SecurityUtils.currentUserId();
         Message message = messageService.update(messageId, request, actorId);
-        broadcastRoomEvent(message.getRoomId(), actorId, Map.of("type", "MESSAGE_UPDATED", "roomId", message.getRoomId(), "message", message));
+        roomEventPublisher.publishRoomEvent(message.getRoomId(), actorId, Map.of("type", "MESSAGE_UPDATED", "roomId", message.getRoomId(), "message", message));
         return message;
     }
 
@@ -62,7 +65,7 @@ public class MessageController {
     public void delete(@PathVariable String messageId) {
         String actorId = SecurityUtils.currentUserId();
         Message message = messageService.delete(messageId, actorId);
-        broadcastRoomEvent(message.getRoomId(), actorId, Map.of("type", "MESSAGE_DELETED", "roomId", message.getRoomId(), "messageId", messageId));
+        roomEventPublisher.publishRoomEvent(message.getRoomId(), actorId, Map.of("type", "MESSAGE_DELETED", "roomId", message.getRoomId(), "messageId", messageId));
     }
 
     @PostMapping("/api/rooms/{roomId}/read/{messageId}")
@@ -70,12 +73,4 @@ public class MessageController {
         memberService.markRead(roomId, messageId, SecurityUtils.currentUserId());
     }
 
-    private void broadcastRoomEvent(String roomId, String actorId, Map<String, Object> event) {
-        messagingTemplate.convertAndSend("/topic/rooms/" + roomId, event);
-        memberService.list(roomId, actorId).stream()
-                .filter(member -> member.getStatus() == ChatRoomMemberStatus.ACTIVE)
-                .map(member -> member.getUserId())
-                .distinct()
-                .forEach(userId -> messagingTemplate.convertAndSendToUser(userId, "/queue/rooms", event));
-    }
 }

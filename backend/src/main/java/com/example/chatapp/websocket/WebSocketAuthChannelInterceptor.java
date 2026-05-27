@@ -3,6 +3,7 @@ package com.example.chatapp.websocket;
 import com.example.chatapp.security.CustomUserPrincipal;
 import com.example.chatapp.security.JwtService;
 import com.example.chatapp.service.PresenceService;
+import java.security.Principal;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.ObjectProvider;
@@ -11,13 +12,17 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 @Component
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
+    public static final String SESSION_USER_ATTRIBUTE = "chatUser";
+
     private final JwtService jwtService;
     private final PresenceService presenceService;
     private final ObjectProvider<SimpMessagingTemplate> messagingTemplateProvider;
@@ -30,7 +35,10 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
-        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+        if (accessor == null) {
+            accessor = StompHeaderAccessor.wrap(message);
+        }
         if (StompCommand.CONNECT.equals(accessor.getCommand())) {
             String header = accessor.getFirstNativeHeader("Authorization");
             if (header == null || !header.startsWith("Bearer ")) {
@@ -38,8 +46,10 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             }
             try {
                 CustomUserPrincipal principal = jwtService.parsePrincipal(header.substring(7));
-                accessor.setUser(principal);
-                SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(principal, null, List.of()));
+                bindPrincipal(accessor, principal);
+                if (accessor.getSessionAttributes() != null) {
+                    accessor.getSessionAttributes().put(SESSION_USER_ATTRIBUTE, principal);
+                }
                 if (presenceService.online(principal.id(), accessor.getSessionId())) {
                     broadcastPresence(principal.id(), true);
                 }
@@ -47,12 +57,39 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
                 throw new IllegalArgumentException("Invalid JWT Authorization header", e);
             }
         }
-        if (StompCommand.DISCONNECT.equals(accessor.getCommand()) && accessor.getUser() instanceof CustomUserPrincipal principal) {
+        CustomUserPrincipal principal = principal(accessor);
+        if (!StompCommand.CONNECT.equals(accessor.getCommand()) && principal != null) {
+            bindPrincipal(accessor, principal);
+        }
+        if (accessor.getCommand() != null
+                && accessor.getCommand() != StompCommand.CONNECT
+                && accessor.getCommand() != StompCommand.DISCONNECT
+                && principal == null) {
+            throw new AuthenticationCredentialsNotFoundException("WebSocket authentication required");
+        }
+        if (StompCommand.DISCONNECT.equals(accessor.getCommand()) && principal != null) {
             if (presenceService.offline(principal.id(), accessor.getSessionId())) {
                 broadcastPresence(principal.id(), false);
             }
         }
         return message;
+    }
+
+    private CustomUserPrincipal principal(StompHeaderAccessor accessor) {
+        Principal user = accessor.getUser();
+        if (user instanceof CustomUserPrincipal principal) {
+            return principal;
+        }
+        if (accessor.getSessionAttributes() == null) {
+            return null;
+        }
+        Object stored = accessor.getSessionAttributes().get(SESSION_USER_ATTRIBUTE);
+        return stored instanceof CustomUserPrincipal principal ? principal : null;
+    }
+
+    private void bindPrincipal(StompHeaderAccessor accessor, CustomUserPrincipal principal) {
+        accessor.setUser(principal);
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(principal, null, List.of()));
     }
 
     private void broadcastPresence(String userId, boolean online) {

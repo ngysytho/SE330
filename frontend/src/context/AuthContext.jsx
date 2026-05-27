@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { clearStoredAuth, getMe, getStoredAuth, login as loginService, logout as logoutService, register as registerService, storeUser } from "../services/authService.js";
+import { unregisterPushNotifications } from "../services/pushService.js";
 
 const AuthContext = createContext(null);
 
@@ -64,6 +65,7 @@ export function AuthProvider({ children }) {
   }
 
   async function logout() {
+    await unregisterPushNotifications();
     await logoutService();
     setAccessToken(null);
     setUserState(null);

@@ -2,6 +2,7 @@ package com.example.chatapp.model;
 
 import com.example.chatapp.enums.Gender;
 import com.example.chatapp.enums.UserRole;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -23,6 +24,7 @@ public class User {
     private String birthday;
     private Gender gender;
     private String note;
+    private List<String> fcmTokens;
     private UserRole role;
     private String code;
     private Boolean isOnline;

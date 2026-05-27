@@ -6,6 +6,7 @@ import { useChat } from "../../context/ChatContext.jsx";
 export default function MessageList() {
   const { messages, loadingMessages, roomError } = useChat();
   const bottomRef = useRef(null);
+  const hasMessages = messages.length > 0;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -14,7 +15,8 @@ export default function MessageList() {
   return (
     <div className="messages-scroll">
       {roomError && <Alert className="message-alert" type="error" showIcon message={roomError} />}
-      {loadingMessages ? (
+      {loadingMessages && hasMessages && <div className="message-loading-note">Đang cập nhật tin nhắn...</div>}
+      {loadingMessages && !hasMessages ? (
         <div className="message-skeletons">
           <Skeleton avatar active paragraph={{ rows: 2 }} />
           <Skeleton avatar active paragraph={{ rows: 2 }} />

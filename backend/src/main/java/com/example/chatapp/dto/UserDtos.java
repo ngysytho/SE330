@@ -16,4 +16,7 @@ public final class UserDtos {
             String note
     ) {
     }
+
+    public record FcmTokenRequest(String token) {
+    }
 }
