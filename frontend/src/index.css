@@ -824,18 +824,30 @@ a {
   color: var(--brand) !important;
 }
 
-.profile-link {
+.profile-edit-link {
   display: inline-flex;
-  width: 42px;
   height: 42px;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   border-radius: 999px;
-  color: var(--muted);
+  background: var(--soft);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 0 12px 0 7px;
+  white-space: nowrap;
 }
 
-.profile-link:hover {
-  background: var(--soft);
+.profile-edit-link:hover {
+  background: var(--soft-strong);
+  color: var(--brand);
+}
+
+.profile-edit-link .ant-avatar {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .chat-shell {

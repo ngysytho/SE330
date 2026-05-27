@@ -9,6 +9,7 @@ import { roomService } from "../../services/roomService.js";
 
 export default function EditRoomModal({ open, onClose, room }) {
   const { refreshRooms, setActiveRoom } = useChat();
+  const isForum = room?.type === "FORUM";
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -30,27 +31,27 @@ export default function EditRoomModal({ open, onClose, room }) {
     setError("");
     try {
       const updated = await roomService.update(room.id, {
-        name,
+        name: isForum ? room.name : name,
         description,
         avatarUrl,
-        isPublic: room.isPublic,
+        isPublic: isForum ? true : room.isPublic,
       });
       setActiveRoom((current) => (current?.id === updated.id ? { ...current, ...updated } : current));
       await refreshRooms();
       onClose();
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Không cập nhật được nhóm.");
+      setError(err?.response?.data?.message || err?.message || `Không cập nhật được ${isForum ? "server" : "nhóm"}.`);
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Modal title="Thông tin nhóm" open={open} onClose={onClose}>
+    <Modal title={isForum ? "Thông tin server" : "Thông tin nhóm"} open={open} onClose={onClose}>
       <form className="room-form" onSubmit={submit}>
-        <AvatarUploader value={avatarUrl} name={name} description="Avatar nhóm" onChange={setAvatarUrl} disabled={saving} />
-        <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Tên nhóm" required />
-        <Input multiline rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Mô tả nhóm" />
+        <AvatarUploader value={avatarUrl} name={name} description={isForum ? "Avatar server" : "Avatar nhóm"} onChange={setAvatarUrl} disabled={saving} />
+        <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={isForum ? "Tên server" : "Tên nhóm"} required disabled={isForum} />
+        <Input multiline rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={isForum ? "Mô tả server" : "Mô tả nhóm"} />
         {error && <Alert type="error" showIcon message={error} />}
         <Button className="w-full" type="submit" loading={saving}>Lưu thông tin</Button>
       </form>

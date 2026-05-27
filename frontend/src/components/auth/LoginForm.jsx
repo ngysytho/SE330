@@ -15,7 +15,7 @@ export default function LoginForm() {
 
   return (
     <form className="auth-card" autoComplete="off" onSubmit={submit}>
-      <h1>BaoAnhPhat</h1>
+      <h1>SE330 UIT</h1>
       <p>Đăng nhập để tiếp tục chat.</p>
       <div className="auth-fields">
         <Input

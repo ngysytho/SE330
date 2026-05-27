@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Info, Phone, SignOut, UserCircle, VideoCamera } from "@phosphor-icons/react";
+import { Info, PencilSimple, Phone, SignOut, VideoCamera } from "@phosphor-icons/react";
 import { Avatar, Badge, Button, Layout, Tooltip, Typography } from "antd";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useChat } from "../../context/ChatContext.jsx";
@@ -16,9 +16,11 @@ export default function TopBar() {
   const initials = roomName.slice(0, 2).toUpperCase();
   const avatar = activeRoom?.displayAvatar || otherMember?.userAvatar || activeRoom?.avatarUrl;
   const statusText = activeRoom ? (socketConnected ? "Đang hoạt động" : "Mất kết nối") : "Chọn một cuộc trò chuyện";
+  const forumStatus = `${members.length} thành viên • ${onlineCount} online`;
   const subtitle = activeRoom?.type === "FORUM"
-    ? `${members.length} thành viên • ${onlineCount} online`
+    ? activeRoom?.description || forumStatus
     : activeRoom?.description || statusText;
+  const userInitials = (user?.name || user?.gmail || "ME").slice(0, 2).toUpperCase();
 
   return (
     <Layout.Header className="topbar">
@@ -47,8 +49,12 @@ export default function TopBar() {
         <Tooltip title="Thông tin">
           <Button className="topbar-icon-button" type="text" shape="circle" icon={<Info size={24} weight="fill" />} />
         </Tooltip>
-        <Link className="profile-link" to="/profile">
-          <Avatar size={30} src={user?.avatarImage} icon={!user?.avatarImage && <UserCircle size={19} weight="bold" />} />
+        <Link className="profile-edit-link" to="/profile" aria-label="Sửa hồ sơ cá nhân">
+          <Avatar size={28} src={user?.avatarImage}>
+            {userInitials}
+          </Avatar>
+          <span>Sửa hồ sơ</span>
+          <PencilSimple size={17} weight="bold" />
         </Link>
         <Tooltip title="Đăng xuất">
           <Button className="topbar-logout" type="text" shape="circle" icon={<SignOut size={20} weight="bold" />} onClick={logout} />

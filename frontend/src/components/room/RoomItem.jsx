@@ -9,7 +9,7 @@ export default function RoomItem({ room }) {
   const timeLabel = room.lastMessageAt
     ? new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" }).format(new Date(room.lastMessageAt))
     : "";
-  const preview = room.lastMessageContent || (room.type === "GROUP" ? "Nhóm chat" : room.type === "FORUM" ? "Phòng chat chung" : room.description || "Đang hoạt động");
+  const preview = room.lastMessageContent || room.description || (room.type === "GROUP" ? "Nhóm chat" : room.type === "FORUM" ? "Phòng chat chung" : "Đang hoạt động");
   const unreadCount = Number(room.unreadCount) || 0;
   const unreadLabel = unreadCount > 99 ? "99+" : unreadCount;
 

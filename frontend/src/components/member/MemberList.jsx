@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { ChatCircleDots, LockSimple, MagnifyingGlass, PencilSimple, UserCircle, UserPlus, UsersThree } from "@phosphor-icons/react";
 import { Avatar, Button, Empty, Layout, Tooltip } from "antd";
 import AddMemberModal from "./AddMemberModal.jsx";
@@ -36,8 +35,8 @@ export default function MemberList() {
     (activeRoom?.name && activeRoom.name !== "Private chat" ? activeRoom.name : activeRoom?.type === "PRIVATE" ? "Tin nhắn riêng" : "Chat info");
   const avatar = activeRoom?.displayAvatar || otherMember?.userAvatar || activeRoom?.avatarUrl;
   const initials = displayName.slice(0, 2).toUpperCase();
-  const myMember = members.find((member) => member.userId === user?.id);
-  const canEditGroup = activeRoom?.type === "GROUP" && ["OWNER", "ADMIN"].includes(myMember?.role);
+  const canEditRoom = ["GROUP", "FORUM"].includes(activeRoom?.type);
+  const roomDescription = activeRoom?.description || (activeRoom?.type === "FORUM" ? "Phòng chat chung của server" : "Đang hoạt động");
 
   return (
     <Layout.Sider width={300} className="member-panel">
@@ -49,21 +48,17 @@ export default function MemberList() {
                 {initials}
               </Avatar>
               <h2>{displayName}</h2>
-              <p>{activeRoom.type === "FORUM" ? "Phòng chat chung của server" : activeRoom.description || "Đang hoạt động"}</p>
+              <p>{roomDescription}</p>
               <div className="chat-info-pill">
                 <LockSimple size={15} weight="fill" />
                 <span>Kết nối realtime</span>
               </div>
               <div className="chat-info-actions">
-                <Link className="chat-info-action" to="/profile">
-                  <span><UserCircle size={24} weight="fill" /></span>
-                  <strong>Profile</strong>
-                </Link>
                 <button className="chat-info-action" type="button">
                   <span><MagnifyingGlass size={24} weight="bold" /></span>
                   <strong>Search</strong>
                 </button>
-                {canEditGroup && (
+                {canEditRoom && (
                   <button className="chat-info-action" type="button" onClick={() => setEditOpen(true)}>
                     <span><PencilSimple size={24} weight="fill" /></span>
                     <strong>Edit</strong>

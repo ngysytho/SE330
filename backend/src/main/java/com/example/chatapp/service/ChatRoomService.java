@@ -114,12 +114,17 @@ public class ChatRoomService {
     }
 
     public ChatRoom update(String roomId, UpdateRoomRequest request, String actorId) {
-        memberService.requireOwnerOrAdmin(roomId, actorId);
+        ChatRoom room = firebase.get(FirebaseService.CHAT_ROOMS, roomId, ChatRoom.class);
+        memberService.requireActive(roomId, actorId);
         Map<String, Object> updates = new HashMap<>();
-        put(updates, "name", request.name());
+        if (room.getType() != ChatRoomType.FORUM) {
+            put(updates, "name", request.name());
+            put(updates, "isPublic", request.isPublic());
+        } else {
+            updates.put("isPublic", true);
+        }
         put(updates, "description", request.description());
         put(updates, "avatarUrl", request.avatarUrl());
-        put(updates, "isPublic", request.isPublic());
         updates.put("updatedAt", firebase.now());
         firebase.update(FirebaseService.CHAT_ROOMS, roomId, updates);
         return get(roomId, actorId);
@@ -210,7 +215,7 @@ public class ChatRoomService {
             updates.put("name", DEFAULT_FORUM_NAME);
             room.setName(DEFAULT_FORUM_NAME);
         }
-        if (!DEFAULT_FORUM_DESCRIPTION.equals(room.getDescription())) {
+        if (room.getDescription() == null) {
             updates.put("description", DEFAULT_FORUM_DESCRIPTION);
             room.setDescription(DEFAULT_FORUM_DESCRIPTION);
         }
